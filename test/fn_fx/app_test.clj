@@ -8,6 +8,7 @@
             [fn-fx.diff :refer [component defui render should-update?]]
             [fn-fx.diff :as diff])
   (:import [javafx.scene.text Text TextAlignment]
+           [fn_fx.render_core Value]
            [javafx.geometry VPos]
            [javafx.scene.paint Color]
            (java.lang.reflect Constructor Method Parameter Modifier Field)
@@ -67,6 +68,8 @@
   (def g
     (fn-fx.diff/->Component :javafx.scene.text.Text nil
                             {:fill (ui/color :red 100 :green 100 :blue 100), :text "hi"}))
+
+  (def g)
   (:dom-node f)
   ;; Ahha! d and e were the same object 
   d>a>c ; d depends on a depends on c
@@ -127,8 +130,7 @@
     )
   (def sa [:a :c :f])
   (def sb [5 4 3])
-  (type 0.0)
-  (type 100)
+
   (def c (last (first ctors)))
   (def c (last (last ctors)))
   (fn? c)
@@ -206,5 +208,154 @@
 (nn fa)
 (println "hi")
 (type fa)
+
+(def ctors
+  (for [{:keys [is-ctor? ^Executable method prop-names-kw prop-types]} (ru/get-value-ctors javafx.scene.paint.Color)]
+    [prop-names-kw
+     (if is-ctor?
+       (fn [args]
+         (let [^objects casted (into-array Object (map rc/convert-value
+                                                       args
+                                                       prop-types))]
+           (.newInstance ^Constructor method casted)))
+       (fn [args]
+         (let [^objects casted (into-array Object (map rc/convert-value
+                                                       args
+                                                       prop-types))]
+           (.invoke ^Method method nil casted)))
+       )])
+
+  )
+
+(def cr
+  (let [t javafx.scene.paint.Color
+        args {:red 100 :green 100 :blue 100}
+        args-set (set (keys args))
+        selected (->> ctors
+                      (keep
+                       (fn [[k fn]]
+                         (when (= (set k) args-set)
+                           `(->Value ~t ~(mapv args k) ((get-value-ctors ~t) ~k))))))]
+
+    ;; instead of above, selected should return several constructors matching the args-set
+    ;; find the first map entry that has convert-value of arg-values matching prop-types.
+    (assert selected (str "No constructor found for " (set (keys args))))
+    ;; filter seleted to give first good constructor; I can't use convert-value
+    ;; because both long and doubles can convert. 
+    selected))
+
+;; The above produces a lazy sequence. Normally, the first is taken and is a
+;; list that creates Value object
+;; (( fn-fx.app-test/get-value-ctors javafx.scene.paint.Color ) [ :red :green :blue ])
+;; (fn-fx.app-test/->Value javafx.scene.paint.Color [ 100 100 100 ]
+;;   ((fn-fx.app-test/get-value-ctors javafx.scene.paint.Color ) [ :red :green :blue ]))
+
+;; Now let's try to change (get-value-ctors ). It currently is a map {[:red
+;; :green :blue] Fn}. k is the key of each of those. Change it to be a map with
+;; maps as keys. ~(mapv args k) is meant to select the vector of values out of
+;; the args map. Now with k as a map the k is no longer a list of keys that can
+;; be used to look up the vals in args. change k to (keys k)
+
+(def ctors
+  (for [{:keys [is-ctor? ^Executable method prop-names-kw prop-types]} (ru/get-value-ctors javafx.scene.paint.Color)]
+    [[prop-names-kw prop-types]
+     (if is-ctor?
+       (fn [args]
+         (let [^objects casted (into-array Object (map rc/convert-value
+                                                       args
+                                                       prop-types))]
+           (.newInstance ^Constructor method casted)))
+       (fn [args]
+         (let [^objects casted (into-array Object (map rc/convert-value
+                                                       args
+                                                       prop-types))]
+           (.invoke ^Method method nil casted)))
+       )])
+
+  )
+
+(defn gvctors [^Class klass] ; get-value-ctors
+  (let [ctors (for [{:keys [is-ctor? ^Executable method prop-names-kw prop-types]} (ru/get-value-ctors klass)]
+                [[prop-names-kw prop-types]
+                 (if is-ctor?
+                   (fn [args]
+                     (let [^objects casted (into-array Object (map rc/convert-value
+                                                                   args
+                                                                   prop-types))]
+                       (.newInstance ^Constructor method casted)))
+                   (fn [args]
+                     (let [^objects casted (into-array Object (map rc/convert-value
+                                                                   args
+                                                                   prop-types))]
+                       (.invoke ^Method method nil casted)))
+                   )])]
+
+    (defmethod rc/convert-value
+      [Value klass]
+      [{:keys [args f]} _]
+      (f args))
+
+    (into {} ctors))
+  )
+
+(def cr
+  (let [t javafx.scene.paint.Color
+        args {:red 100 :green 100 :blue 100}
+        args-set (set (keys args))
+        ctors (gvctors t)
+        selected (->> ctors
+                      (keep
+                       (fn [[[pn pt :as k] fn]] ; prop-names-kw prop-types
+                         (when (= (set pn) args-set)
+                           `(->Value ~t ~(mapv args pn) ((gvctors ~t) ~k))))))]
+
+    ;; instead of above, selected should return several constructors matching the args-set
+    ;; find the first map entry that has convert-value of arg-values matching prop-types.
+    (assert selected (str "No constructor found for " (set (keys args))))
+    ;; filter seleted to give first good constructor; I can't use convert-value
+    ;; because both long and doubles can convert.
+    selected))
+
+(def ct (gvctors javafx.scene.paint.Color))
+(first (first ct))
+(= (-> ct first first last first) java.lang.Double #_Double/TYPE)
+(def r
+  (->> ct
+       (keep
+        (fn [[[pn pt :as k] fn]] ; prop-names-kw prop-types
+          (when (= (set pn) args-set)
+            `(->Value ~t ~(mapv args pn) ((gvctors ~t) ~k)))))))
+;; but we risk losing the ordering of the argument list by using a map. So I
+;; need to use [[][]] structure as the keys (k) which is [prop-names-kw
+;; prop-types]. 
+
+(defmulti score
+  "Score pairing or arguments to argument types according to preference
+  This will be used to choose best constructor."
+  (fn [from to-type]
+    [(type from) (cond
+                   (#{java.lang.Long/TYPE java.lang.Long java.lang.Integer/TYPE
+                      java.lang.Integer} to-type)
+                   :int-type
+                   (#{java.lang.Double/TYPE java.lang.Double java.lang.Float/TYPE
+                      java.lang.Float} to-type)
+                   :float-type)]))
+
+(defmethod score [java.lang.Long :int-type] [_ _] 2)
+(defmethod score [java.lang.Long :float-type] [_ _] 1)
+(defmethod score [java.lang.Long nil] [_ _] 0)
+(defmethod score [java.lang.Double :int-type] [_ _] 1)
+(defmethod score [java.lang.Double :float-type] [_ _] 2)
+(defmethod score [java.lang.Double nil] [_ _] 0)
+(defmethod score :default [_ _] 0)
+
+(let [a [100 100 100]
+      b [java.lang.Integer java.lang.Integer/TYPE java.lang.Double]]
+  (apply + (map score a b)))
+(score 100 java.lang.Integer)
+
+(def r
+  (rc/value-type-impl javafx.scene.paint.Color {:red 0.5 :green 0.5 :blue 0.5}))
+(sort [[3 :a] [5 :b] [1 :c] [10 :d]])
   )
 
