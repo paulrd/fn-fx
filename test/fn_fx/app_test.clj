@@ -91,9 +91,6 @@
   ;; gets selected as a Value before this. What is probably happening is that
   ;; the doubles get truncated to ints in the constructor. It should be choosing
   ;; the constructor with named values
-  (def c (ui/color :red 0.69 :green 0.13 :blue 0.13))
-  (def c (ui/color :red 100 :green 100 :blue 100))
-  (def c (ui/color :red 0.69 :green 0.13 :blue 0.13))
   (macroexpand-1 '(ui/color :red 0.69 :green 0.13 :blue 0.13))
   (macroexpand '(ui/color :red 0.69 :green 0.13 :blue 0.13))
   (fn-fx.render-core/->Value
@@ -113,7 +110,7 @@
 
   (def ctors
     (for [{:keys [is-ctor? ^Executable method prop-names-kw prop-types]} (ru/get-value-ctors javafx.scene.paint.Color)]
-      [prop-names-kw
+      [(into prop-names-kw prop-types)
        (if is-ctor?
          (fn [args]
            (let [^objects casted (into-array Object (map rc/convert-value
@@ -128,8 +125,25 @@
          )])
 
     )
-
-
+  (def sa [:a :c :f])
+  (def sb [5 4 3])
+  (type 0.0)
+  (type 100)
+  (def c (last (first ctors)))
+  (def c (last (last ctors)))
+  (fn? c)
+  (def c
+    (ru/get-value-ctors javafx.scene.paint.Color))
+  (def f (.getFields (type c)))
+  (parents c)
+  (def r (:members (clojure.reflect/reflect c)))
+  (def r (clojure.reflect/reflect c))
+  (defn ff [m]
+    (= (:name m) 'prop_types))
+  (def pt (filter ff r))
+  (require '[clojure.inspector :as i])
+  (i/inspect c)
+  (clojure.reflect/reflect (first r))
   ;; It seems that there are two constructors for :red :green :blue. One takes
   ;; doubles and one takes ints.
   ;; The bug is in the last line of get-value-ctors. It makes the list into a
