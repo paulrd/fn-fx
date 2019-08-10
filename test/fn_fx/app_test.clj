@@ -1,20 +1,16 @@
 (ns fn-fx.app-test
   (:require [clojure.test :as t]
             [fn-fx.fx-dom :as dom]
-            [fn-fx.util :as util]
             [fn-fx.set-once-type :refer [defquasitype set-once!]]
             [fn-fx.util.reflect-utils :as ru]
             [fn-fx.render-core :refer [get-getter] :as rc]
             [fn-fx.controls :as ui]
-            [fn-fx.diff :refer [component defui render should-update?] :as d]
+            [fn-fx.diff :refer [component defui render should-update?]]
             [fn-fx.diff :as diff])
-  (:import [javafx.scene.text Text TextAlignment Font FontWeight]
+  (:import [javafx.scene.text Text TextAlignment]
            [fn_fx.render_core Value]
-           [fn_fx.diff Component]
            [javafx.geometry VPos]
-           [javafx.util Duration]
            [javafx.scene.paint Color]
-           [javafx.animation TranslateTransition Interpolator Timeline Animation Transition]
            (java.lang.reflect Constructor Method Parameter Modifier Field)
            ))
 
@@ -331,76 +327,35 @@
             `(->Value ~t ~(mapv args pn) ((gvctors ~t) ~k)))))))
 ;; but we risk losing the ordering of the argument list by using a map. So I
 ;; need to use [[][]] structure as the keys (k) which is [prop-names-kw
-;; prop-types].
+;; prop-types]. 
 
-(def c
-  (d/->Component :javafx.animation.TranslateTransition nil
-                 {:duration 75000,:node (ui/text :text "hi"),:to-y -820,:interpolator :linear,
-                  :cycle-count :indefinite}))
+(defmulti score
+  "Score pairing or arguments to argument types according to preference
+  This will be used to choose best constructor."
+  (fn [from to-type]
+    [(type from) (cond
+                   (#{java.lang.Long/TYPE java.lang.Long java.lang.Integer/TYPE
+                      java.lang.Integer} to-type)
+                   :int-type
+                   (#{java.lang.Double/TYPE java.lang.Double java.lang.Float/TYPE
+                      java.lang.Float} to-type)
+                   :float-type)]))
 
-(def ca (dom/app c))
-(def fxdom (dom/->FXDom dom/default-handler-fn))
-(d/val-type fxdom)
-(d/val-type c)
-(d/val-type ca)
-(def dd
-  (d/diff fxdom nil c))
-(defn md
-  [dom a b]
-  (let [refresh-node (fn [node compo-a compo-b]
-                       (set-once! compo-b :dom-node node)
-                       (d/diff-component dom node (:props compo-a) (:props compo-b))
-                       node)
-        new-node (fn [compo]
-                   (let [node (d/create-component! dom (:type compo))]
-                     (assert node "No Node returned by create-component!")
-                     (refresh-node node nil compo)))]
-    (new-node b)))
+(defmethod score [java.lang.Long :int-type] [_ _] 2)
+(defmethod score [java.lang.Long :float-type] [_ _] 1)
+(defmethod score [java.lang.Long nil] [_ _] 0)
+(defmethod score [java.lang.Double :int-type] [_ _] 1)
+(defmethod score [java.lang.Double :float-type] [_ _] 2)
+(defmethod score [java.lang.Double nil] [_ _] 0)
+(defmethod score :default [_ _] 0)
 
-(def mc
-  (md (dom/->FXDom dom/default-handler-fn) nil
-      (d/->Component :javafx.animation.TranslateTransition nil
-                     {:duration (ui/duration :millis 75000),
-                      :node (ui/text :text "hi"),:to-y -820,
-                      ;; We can assign static field instance as a keyword instead of Class/Field
-                      :interpolator :linear,
-                      ;; But not if the field instance is primitive type (int)
-                      :cycle-count :indefinite})))
-;; I should be able to get the above to work Interpolator/LINEAR was found, so
-;; Animation/INDEFINITE should also be found, the only difference is that we get
-;; the declared fields for the type of the property in the first case. In the
-;; second case, the type of the property is int and so has no fields, it needs
-;; to look for fields of the ancestor objects as well, in this case Animation
-;; But to do this, I would have to 
-(def t-t
-  (-> (ui/translate-transition
-       :cycle-count Timeline/INDEFINITE
-       )
-      dom/app :root deref))
-(.getCycleCount t-t)
+(let [a [100 100 100]
+      b [java.lang.Integer java.lang.Integer/TYPE java.lang.Double]]
+  (apply + (map score a b)))
+(score 100 java.lang.Integer)
 
-(def tt
-  (doto (TranslateTransition. (Duration. 75000) (Text. "hi"))
-    (.setToY -820) (.setInterpolator Interpolator/LINEAR)
-    (.setCycleCount Timeline/INDEFINITE)))
-(.getCycleCount tt)
-
-(defn register-keyword-conv [^Class tp]
-  (let [values (->> (for [^Field f (.getDeclaredFields tp)
-                          :when (Modifier/isPublic (.getModifiers f))
-                          :when (Modifier/isStatic (.getModifiers f))
-                          :when (= tp (.getType f))]
-                      [(keyword (util/upper->kabob (.getName f))) (.get f nil)])
-                    (into {}))]
-    (defmethod convert-value [clojure.lang.Keyword tp]
-      [val _]
-      (let [r (get values val ::not-found)]
-        (assert (not= r ::not-found)
-                (str "No converter for keyword " val " to type " tp))
-        r))
-    values))
-
-(def l (rc/register-keyword-conv Interpolator TranslateTransition))
-
+(def r
+  (rc/value-type-impl javafx.scene.paint.Color {:red 0.5 :green 0.5 :blue 0.5}))
+(sort [[3 :a] [5 :b] [1 :c] [10 :d]])
   )
 
