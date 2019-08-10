@@ -399,7 +399,6 @@
     values))
 
 (def l (rc/register-keyword-conv Interpolator TranslateTransition))
->>>>>>> Stashed changes
 
 (def r
   (rc/value-type-impl javafx.scene.paint.Color {:red 0.5 :green 0.5 :blue 0.5}))
