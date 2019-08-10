@@ -30,11 +30,17 @@
         integer-count
         (-> :javafx.animation.TranslateTransition
             (component {:cycle-count javafx.animation.Animation/INDEFINITE})
-            dom/app :root)]
+            dom/app :root)
+        kw-i (-> :javafx.animation.TranslateTransition
+                 (component {:interpolator :linear}) dom/app :root)
+        kw-count (-> :javafx.animation.TranslateTransition
+                     (component {:cycle-count :indefinite}) dom/app :root)]
     (Thread/sleep 100)
     (is (= 1 (get-prop @default-count :cycle-count)))
     (is (= 22 (get-prop @long-count :cycle-count)))
-    (is (= -1 (get-prop @integer-count :cycle-count)))))
+    (is (= -1 (get-prop @integer-count :cycle-count)))
+    (is (= javafx.animation.Interpolator/LINEAR (get-prop @kw-i :interpolator)))
+    (is (= -1 (get-prop @kw-count :cycle-count)))))
 
 (defn gen-list [cnt]
   (let [items (vec (for [x (range cnt)]

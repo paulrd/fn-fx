@@ -25,7 +25,7 @@
 (defmulti set-property (fn [control prop val]
                          [(type control) prop]))
 
-(defmulti convert-value (fn [from to-type]
+(defmulti convert-value (fn [from to-type &[within]]
                           [(type from) to-type]))
 
 
@@ -118,7 +118,7 @@
                        [(keyword (util/upper->kabob (.getName f))) (.get f nil)])
                      (into values1))]
     (defmethod convert-value [clojure.lang.Keyword tp]
-      [val _]
+      [val _ &[_]]
       (let [r (get values2 val ::not-found)]
         (assert (not= r ::not-found)
                 (str "No converter for keyword " val " to type " tp))
@@ -126,17 +126,17 @@
     values2))
 
 (defmethod convert-value :default
-  [value ^Class tp]
+    [value ^Class tp &[within]]
   (if (not (.isAssignableFrom tp (type value)))
     (if (keyword? value)
-      (do (register-keyword-conv tp)
-          (convert-value value tp))
-      (assert (.isAssignableFrom tp (type value)) (str "Can't convert " (pr-str value) " of type " (type value) " to " tp))))
-  value)
+      (do (register-keyword-conv tp within)
+          (convert-value value tp within))
+      (assert (.isAssignableFrom tp (type value)) (str "Can't convert " (pr-str value) " of type " (type value) " to " tp)))
+    value))
 
 (defmethod convert-value
   [java.lang.Long Double/TYPE]
-  [value _]
+  [value _ &[]]
   (double value))
 
 (def child-properties (atom {}))
@@ -186,12 +186,11 @@
                      (let [^objects casted (into-array Object (map convert-value
                                                                    args
                                                                    prop-types))]
-                       (.invoke ^Method method nil casted)))
-                   )])]
+                       (.invoke ^Method method nil casted))))])]
 
     (defmethod convert-value
       [Value klass]
-      [{:keys [args f]} _]
+      [{:keys [args f]} _ &[]]
       (f args))
 
     (into {} ctors)))
@@ -259,7 +258,7 @@
     (.setAccessible method true)
     (fn [inst val]
       (let [^objects arr (make-array Object 1)]
-        (aset arr 0 (convert-value val to-type))
+        (aset arr 0 (convert-value val to-type klass))
         (.invoke method inst arr)))))
 
 (defn get-static-setter [prop]
@@ -391,7 +390,7 @@
                            o]))
                    (.getEnumConstants klass))]
     (defmethod convert-value [clojure.lang.Keyword klass]
-      [kw _]
+      [kw _ &[]]
       (if-some [result (vals kw)]
         result
         (throw (ex-info "Invalid Enum Value" {:class klass :value kw :supported vals}))))))
@@ -402,7 +401,7 @@
 (defn register-value-converter [^Class klass]
   (doseq [c (conj (ancestors klass) klass)]
     (defmethod convert-value [Value c]
-      [{:keys [args f]} _]
+      [{:keys [args f]} _ &[]]
       (f args))))
 
 ;; Helpers
@@ -422,17 +421,15 @@
 ;; Value Converters
 
 (defmethod convert-value [DefaultValue javafx.scene.Parent]
-  [_ _]
+  [_ _ &[]]
   (javafx.scene.layout.VBox.))
 
 (defmethod convert-value [DefaultValue Double/TYPE]
-  [_ _]
+  [_ _ &[]]
   0.0)
 
-
-
 (defmethod convert-value [clojure.lang.ILookup EventHandler]
-  [template _]
+  [template _ &[]]
   (let [handler-fn *handler-fn*]
     (reify EventHandler
       (^void handle [this ^Event event]
@@ -441,29 +438,30 @@
           nil)))))
 
 (defmethod convert-value [Long Integer]
-  [v _]
+  [v _ &[]]
   (int v))
 
 (defmethod convert-value [Long Integer/TYPE]
-  [v _]
+  [v _ &[]]
   (int v))
 
 (defmethod convert-value [Integer Integer/TYPE]
-  [v _]
+  [v _ &[]]
   (int v))
 
 (defmethod convert-value [Double Double/TYPE]
-  [v _]
+  [v _ &[]]
   (double v))
 
 (defmethod convert-value [clojure.lang.Keyword java.lang.String]
-  [v _]
+  [v _ &[]]
   (str v))
 
 (defmethod convert-value [Double Integer/TYPE]
-  [v _]
+  [v _ &[]]
   (int v))
 
 (defmethod convert-value [Boolean Boolean/TYPE]
-  [v _]
+  [v _ &[]]
   (boolean v))
+
