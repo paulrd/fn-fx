@@ -403,5 +403,11 @@
 (def r
   (rc/value-type-impl javafx.scene.paint.Color {:red 0.5 :green 0.5 :blue 0.5}))
 (sort [[3 :a] [5 :b] [1 :c] [10 :d]])
+
+(-> (ui/translate-transition :duration 75000 :interpolator :linear
+                             :cycle-count :indefinite)
+    dom/app :root deref .getCycleCount
+    )
+
   )
 
